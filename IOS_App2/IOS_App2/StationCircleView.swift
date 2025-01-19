@@ -4,11 +4,11 @@ struct StationCircleView: View {
     @EnvironmentObject var airQualityService: AirQualityService
     
     let stationId: Int
+    let onDetails: ((Int) -> Void)? // callback, np. by przejść do "GetStats"
     
     @State private var isLoading = false
     @State private var showInfo = false
     
-    // Dynamiczny dostęp do obiektu stacji z dictionary
     private var station: AirQualityStation? {
         airQualityService.stationById[stationId]
     }
@@ -18,13 +18,12 @@ struct StationCircleView: View {
             .fill(colorForStation(station))
             .frame(width: 20, height: 20)
             .overlay(
-                isLoading
-                ? AnyView(
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.6)
-                  )
-                : AnyView(EmptyView())
+                isLoading ?
+                    AnyView(
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.6)
+                    ) : AnyView(EmptyView())
             )
             .onTapGesture {
                 isLoading = true
@@ -43,6 +42,14 @@ struct StationCircleView: View {
                         Text("Ogólny indeks: \(st.overallIndexName ?? "Brak")")
                         Text("PM10: \(formatPM(st.pm10)), idx: \(st.pm10IndexName ?? "Brak")")
                         Text("PM2.5: \(formatPM(st.pm25)), idx: \(st.pm25IndexName ?? "Brak")")
+                        
+                        Divider().padding(.vertical, 8)
+                        
+                        // Przycisk "Details"
+                        Button("Details") {
+                            showInfo = false
+                            onDetails?(stationId)
+                        }
                     }
                     .padding()
                 } else {

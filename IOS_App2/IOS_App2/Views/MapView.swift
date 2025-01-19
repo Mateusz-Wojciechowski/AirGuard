@@ -5,31 +5,56 @@ struct MapView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var airQualityService: AirQualityService
     
+    @State private var selectedStationId: Int? = nil
+    @State private var navigateToDetails = false
+    
     var body: some View {
-        Map(
-            coordinateRegion: $locationManager.region,
-            interactionModes: .all,
-            showsUserLocation: false,
-            annotationItems: combinedAnnotations
-        ) { item in
-            MapAnnotation(coordinate: item.coordinate) {
-                if let station = item.station {
-                    StationCircleView(stationId: station.id)
-                        .environmentObject(airQualityService)
-                } else if let _ = item.userLocation {
-                    Circle()
-                        .fill(Color.blue)
-                        .frame(width: 20, height: 20)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white, lineWidth: 2)
+        ZStack {
+            // Usuwamy NavigationView i pozostawiamy sam Map + ukryty NavigationLink
+            Map(
+                coordinateRegion: $locationManager.region,
+                interactionModes: .all,
+                showsUserLocation: false,
+                annotationItems: combinedAnnotations
+            ) { item in
+                MapAnnotation(coordinate: item.coordinate) {
+                    if let station = item.station {
+                        StationCircleView(
+                            stationId: station.id,
+                            onDetails: { stId in
+                                selectedStationId = stId
+                                navigateToDetails = true
+                            }
                         )
-                } else {
-                    EmptyView()
+                        .environmentObject(airQualityService)
+                        
+                    } else if let _ = item.userLocation {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 20, height: 20)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white, lineWidth: 2)
+                            )
+                    } else {
+                        EmptyView()
+                    }
                 }
             }
+            .edgesIgnoringSafeArea(.all)
+            
+            // Ukryty NavigationLink do LocationDataView (GetStats)
+            NavigationLink(
+                destination: LocationDataView(selectedStationId: selectedStationId)
+                    .environmentObject(airQualityService)
+                    .environmentObject(locationManager),
+                isActive: $navigateToDetails
+            ) {
+                EmptyView()
+            }
         }
-        .edgesIgnoringSafeArea(.all)
+        // Brak drugiej nawigacji => będzie tylko 1 strzałka w stacku,
+        // zarządzanym np. przez ContentView lub inny rodzic.
     }
     
     private var combinedAnnotations: [CustomAnnotation] {
@@ -58,13 +83,5 @@ struct MapView: View {
         }
         result.append(contentsOf: stationAnnots)
         return result
-    }
-}
-
-struct MapView_Previews: PreviewProvider {
-    static var previews: some View {
-        MapView()
-            .environmentObject(LocationManager())
-            .environmentObject(AirQualityService())
     }
 }

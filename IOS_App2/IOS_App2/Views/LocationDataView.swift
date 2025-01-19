@@ -5,17 +5,28 @@ struct LocationDataView: View {
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var airQualityService: AirQualityService
     
+    // Wybrana stacja (przekazana np. z MapView)
+    @State private var selectedStationIdState: Int?
+    
+    // Popupy PM
     @State private var showPM10Info = false
     @State private var showPM25Info = false
     
+    // Nawigacja do MapView
     @State private var navigateToMap = false
     
-    // Dodajemy nawigację do widoku wykresów
+    // Obsługa wykresów
     @State private var showPlots = false
     @State private var plotsStationId: Int? = nil
     
+    // Konstruktor z parametrem stacji
+    init(selectedStationId: Int? = nil) {
+        _selectedStationIdState = State(initialValue: selectedStationId)
+    }
+    
     var body: some View {
         ZStack {
+            // Tło
             LinearGradient(
                 gradient: Gradient(colors: [
                     Color(red: 0.85, green: 0.93, blue: 1.0),
@@ -36,31 +47,25 @@ struct LocationDataView: View {
                     
                     // Kafelek z AQI + emotka
                     VStack(spacing: 8) {
-                        let indexName = nearestStationIndex()
+                        let indexName = currentStationIndex()
                         Image(systemName: emojiForIndex(indexName))
                             .resizable()
                             .scaledToFit()
                             .frame(width: 40, height: 40)
                             .foregroundColor(colorForIndex(indexName))
                         
-                        // Wypisanie koordów, AQI...
-                        if let userLocation = locationManager.userLocation {
-                            Text("\(userLocation.coordinate.latitude), \(userLocation.coordinate.longitude)")
+                        if let station = currentStationBasic() {
+                            let lat = Double(station.gegrLat) ?? 0.0
+                            let lon = Double(station.gegrLon) ?? 0.0
+                            Text(String(format: "%.4f, %.4f", lat, lon))
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             
-                            if let nearBasic = nearestStation() {
-                                if let nearFull = airQualityService.stationById[nearBasic.id] {
-                                    Text("AQI: \(nearFull.overallIndexName ?? "-")")
-                                        .font(.largeTitle)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.primary)
-                                } else {
-                                    Text("AQI: -")
-                                        .font(.largeTitle)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.primary)
-                                }
+                            if let stationFull = airQualityService.stationById[station.id] {
+                                Text("AQI: \(stationFull.overallIndexName ?? "-")")
+                                    .font(.largeTitle)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.primary)
                             } else {
                                 Text("AQI: -")
                                     .font(.largeTitle)
@@ -68,7 +73,7 @@ struct LocationDataView: View {
                                     .foregroundColor(.primary)
                             }
                         } else {
-                            Text("AQI: -")
+                            Text("No station selected.")
                                 .font(.largeTitle)
                                 .fontWeight(.bold)
                                 .foregroundColor(.primary)
@@ -76,10 +81,9 @@ struct LocationDataView: View {
                         
                         // Przycisk do wykresów
                         Button(action: {
-                            guard let nb = nearestStation() else { return }
-                            // Najpierw pobieramy details stacji (w razie gdyby jeszcze nie były pobrane)
-                            airQualityService.fetchDetails(for: nb.id) {
-                                plotsStationId = nb.id
+                            guard let st = currentStationBasic() else { return }
+                            airQualityService.fetchDetails(for: st.id) {
+                                plotsStationId = st.id
                                 showPlots = true
                             }
                         }) {
@@ -106,8 +110,8 @@ struct LocationDataView: View {
                             .font(.headline)
                             .padding(.bottom, 4)
                         
-                        let nearBasic = nearestStation()
-                        if let nb = nearBasic, let nf = airQualityService.stationById[nb.id] {
+                        if let station = currentStationBasic(),
+                           let nf = airQualityService.stationById[station.id] {
                             HStack(alignment: .center, spacing: 20) {
                                 // PM10
                                 Button {
@@ -156,7 +160,7 @@ struct LocationDataView: View {
                     .shadow(radius: 4)
                     .padding(.horizontal, 16)
                     
-                    // "Closest stations" + mapa
+                    // "Closest stations" + map
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Closest stations")
                             .font(.headline)
@@ -169,8 +173,11 @@ struct LocationDataView: View {
                         ) { item in
                             MapAnnotation(coordinate: item.coordinate) {
                                 if let st = item.station {
-                                    StationCircleView(stationId: st.id)
-                                        .environmentObject(airQualityService)
+                                    SimpleStationCircleView(stationId: st.id) { tappedId in
+                                        // Zmieniamy aktywną stację w tym widoku
+                                        selectStation(tappedId)
+                                    }
+                                    .environmentObject(airQualityService)
                                 } else if let _ = item.userLocation {
                                     Circle()
                                         .fill(Color.blue)
@@ -200,6 +207,7 @@ struct LocationDataView: View {
                                 .cornerRadius(8)
                         }
                         
+                        // Link do MapView
                         NavigationLink(
                             destination: MapView()
                                 .environmentObject(airQualityService)
@@ -221,12 +229,14 @@ struct LocationDataView: View {
                 }
             }
             .onAppear {
-                // Pobierz dane najbliższej stacji
-                if let nb = nearestStation() {
+                // Jesli wchodzimy z parametrem stacji
+                if let sid = selectedStationIdState {
+                    airQualityService.fetchDetails(for: sid)
+                } else if let nb = nearestStation() {
                     airQualityService.fetchDetails(for: nb.id)
                 }
             }
-            // Sheet do wykresów
+            // Sheet z wykresami
             .sheet(isPresented: $showPlots) {
                 if let sid = plotsStationId {
                     PlotsView(stationId: sid)
@@ -238,38 +248,50 @@ struct LocationDataView: View {
             if showPM10Info {
                 InfoPopupView(
                     title: "PM 10",
-                    description: """
-PM10 refers to particulate matter with diameter <= 10 μm ...
-""",
+                    description: "PM10 refers to particulate matter <= 10 μm ...",
                     onClose: { showPM10Info = false }
                 )
             }
             if showPM25Info {
                 InfoPopupView(
                     title: "PM 2.5",
-                    description: """
-PM2.5 refers to particulate matter with diameter <= 2.5 μm ...
-""",
+                    description: "PM2.5 refers to particulate matter <= 2.5 μm ...",
                     onClose: { showPM25Info = false }
                 )
             }
         }
     }
-}
-
-// MARK: - Extension
-extension LocationDataView {
-    private func nearestStation() -> AirQualityStation? {
-        guard let user = locationManager.userLocation else { return nil }
+    
+    // MARK: - Funkcje
+    private func selectStation(_ stationId: Int) {
+        // Ustawiamy nową stację
+        airQualityService.fetchDetails(for: stationId)
+        selectedStationIdState = stationId
+    }
+    
+    private func currentStationBasic() -> AirQualityStation? {
+        if let sid = selectedStationIdState,
+           let st = airQualityService.stations.first(where: { $0.id == sid }) {
+            return st
+        }
+        guard let userLoc = locationManager.userLocation else { return nil }
         return airQualityService.stations.min { s1, s2 in
-            distance(s1, user.coordinate) < distance(s2, user.coordinate)
+            distance(s1, userLoc.coordinate) < distance(s2, userLoc.coordinate)
         }
     }
     
-    private func nearestStationIndex() -> String? {
-        guard let st = nearestStation() else { return nil }
-        let full = airQualityService.stationById[st.id]
-        return full?.overallIndexName
+    private func currentStationIndex() -> String? {
+        guard let st = currentStationBasic() else { return nil }
+        return airQualityService.stationById[st.id]?.overallIndexName
+    }
+    
+    private func nearestStation() -> AirQualityStation? {
+        guard let userLoc = locationManager.userLocation else {
+            return nil
+        }
+        return airQualityService.stations.min { s1, s2 in
+            distance(s1, userLoc.coordinate) < distance(s2, userLoc.coordinate)
+        }
     }
     
     private func distance(_ st: AirQualityStation, _ coord: CLLocationCoordinate2D) -> Double {
@@ -287,25 +309,21 @@ extension LocationDataView {
         return String(format: "%.1f", v)
     }
     
-    // Emotka do wyświetlenia (rezygnujemy z "face.*", bo niektóre są niedostępne)
-    // Zastosujemy proste ikony "sun.max", "cloud", "cloud.rain", ...
     private func emojiForIndex(_ indexName: String?) -> String {
         guard let idx = indexName?.lowercased() else {
-            // "domyślna" ikonka – np. słońce
             return "sun.max"
         }
         switch idx {
-        case "bardzo dobry": return "sun.max.fill"  // intensywnie słoneczny
-        case "dobry":        return "sun.max"       // słońce
-        case "umiarkowany":  return "cloud.sun"     // pół na pół
-        case "dostateczny":  return "cloud"         // chmura
-        case "zły":          return "cloud.rain"    // deszcz
-        case "bardzo zły":   return "cloud.bolt.rain" // burza
-        default:             return "sun.max"       // fallback
+        case "bardzo dobry": return "sun.max.fill"
+        case "dobry":        return "sun.max"
+        case "umiarkowany":  return "cloud.sun"
+        case "dostateczny":  return "cloud"
+        case "zły":          return "cloud.rain"
+        case "bardzo zły":   return "cloud.bolt.rain"
+        default:             return "sun.max"
         }
     }
     
-    // Kolor do emotki
     private func colorForIndex(_ indexName: String?) -> Color {
         guard let idx = indexName?.lowercased() else {
             return .green
@@ -323,6 +341,7 @@ extension LocationDataView {
     private var combinedAnnotations: [CustomAnnotation] {
         var result: [CustomAnnotation] = []
         
+        // user location
         if let user = locationManager.userLocation {
             result.append(
                 CustomAnnotation(
@@ -346,6 +365,43 @@ extension LocationDataView {
         }
         result.append(contentsOf: stAnnots)
         return result
+    }
+}
+
+// MARK: - SimpleStationCircleView
+struct SimpleStationCircleView: View {
+    @EnvironmentObject var airQualityService: AirQualityService
+    
+    let stationId: Int
+    let onTapped: (Int) -> Void  // callback
+    
+    private var station: AirQualityStation? {
+        airQualityService.stationById[stationId]
+    }
+    
+    var body: some View {
+        Circle()
+            .fill(colorForStation(station))
+            .frame(width: 20, height: 20)
+            .onTapGesture {
+                onTapped(stationId)
+            }
+    }
+    
+    private func colorForStation(_ station: AirQualityStation?) -> Color {
+        guard let st = station,
+              let idxName = st.overallIndexName else {
+            return .gray
+        }
+        switch idxName.lowercased() {
+        case "bardzo dobry": return .green
+        case "dobry":        return .green
+        case "umiarkowany":  return .yellow
+        case "dostateczny":  return .orange
+        case "zły":          return .red
+        case "bardzo zły":   return .purple
+        default:             return .gray
+        }
     }
 }
 
