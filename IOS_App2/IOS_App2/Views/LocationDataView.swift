@@ -10,6 +10,10 @@ struct LocationDataView: View {
     
     @State private var navigateToMap = false
     
+    // Dodajemy nawigację do widoku wykresów
+    @State private var showPlots = false
+    @State private var plotsStationId: Int? = nil
+    
     var body: some View {
         ZStack {
             LinearGradient(
@@ -32,20 +36,19 @@ struct LocationDataView: View {
                     
                     // Kafelek z AQI
                     VStack(spacing: 8) {
-                        Image(systemName: "face.smiling")
+                        let indexName = nearestStationIndex()
+                        Image(systemName: emojiForIndex(indexName))
                             .resizable()
                             .scaledToFit()
                             .frame(width: 40, height: 40)
-                            .foregroundColor(.green)
+                            .foregroundColor(colorForIndex(indexName))
                         
                         if let userLocation = locationManager.userLocation {
                             Text("\(userLocation.coordinate.latitude), \(userLocation.coordinate.longitude)")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             
-                            // Najbliższa stacja
                             if let nearBasic = nearestStation() {
-                                // Szczegóły z stationById
                                 if let nearFull = airQualityService.stationById[nearBasic.id] {
                                     Text("AQI: \(nearFull.overallIndexName ?? "-")")
                                         .font(.largeTitle)
@@ -70,15 +73,21 @@ struct LocationDataView: View {
                                 .foregroundColor(.primary)
                         }
                         
-                        Button("Plots for this location") {
-                            // ...
+                        // Przycisk do wykresów
+                        Button(action: {
+                            if let st = nearestStation() {
+                                plotsStationId = st.id
+                                showPlots = true
+                            }
+                        }) {
+                            Text("Plots for this location")
+                                .font(.callout)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 12)
+                                .background(Color.blue)
+                                .cornerRadius(8)
                         }
-                        .font(.callout)
-                        .foregroundColor(.white)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(Color.blue)
-                        .cornerRadius(8)
                     }
                     .padding()
                     .background(
@@ -157,7 +166,6 @@ struct LocationDataView: View {
                         ) { item in
                             MapAnnotation(coordinate: item.coordinate) {
                                 if let st = item.station {
-                                    // UWAGA: environmentObject(airQualityService)!
                                     StationCircleView(stationId: st.id)
                                         .environmentObject(airQualityService)
                                 } else if let _ = item.userLocation {
@@ -189,10 +197,12 @@ struct LocationDataView: View {
                                 .cornerRadius(8)
                         }
                         
-                        NavigationLink(destination: MapView()
-                            .environmentObject(airQualityService)
-                            .environmentObject(locationManager),
-                                       isActive: $navigateToMap) {
+                        NavigationLink(
+                            destination: MapView()
+                                .environmentObject(airQualityService)
+                                .environmentObject(locationManager),
+                            isActive: $navigateToMap
+                        ) {
                             EmptyView()
                         }
                     }
@@ -213,7 +223,15 @@ struct LocationDataView: View {
                     airQualityService.fetchDetails(for: nb.id)
                 }
             }
+            // Sheet do wykresów
+            .sheet(isPresented: $showPlots) {
+                if let sid = plotsStationId {
+                    PlotsView(stationId: sid)
+                        .environmentObject(airQualityService)
+                }
+            }
             
+            // Popupy PM10 / PM2.5
             if showPM10Info {
                 InfoPopupView(
                     title: "PM 10",
@@ -223,7 +241,6 @@ PM10 refers to particulate matter with diameter <= 10 μm ...
                     onClose: { showPM10Info = false }
                 )
             }
-            
             if showPM25Info {
                 InfoPopupView(
                     title: "PM 2.5",
@@ -237,13 +254,19 @@ PM2.5 refers to particulate matter with diameter <= 2.5 μm ...
     }
 }
 
-// MARK: - Ext
+// MARK: - Extension
 extension LocationDataView {
     private func nearestStation() -> AirQualityStation? {
         guard let user = locationManager.userLocation else { return nil }
         return airQualityService.stations.min { s1, s2 in
             distance(s1, user.coordinate) < distance(s2, user.coordinate)
         }
+    }
+    
+    private func nearestStationIndex() -> String? {
+        guard let st = nearestStation() else { return nil }
+        let full = airQualityService.stationById[st.id]
+        return full?.overallIndexName
     }
     
     private func distance(_ st: AirQualityStation, _ coord: CLLocationCoordinate2D) -> Double {
@@ -259,6 +282,36 @@ extension LocationDataView {
     private func formatPM(_ value: Double?) -> String {
         guard let v = value else { return "-" }
         return String(format: "%.1f", v)
+    }
+    
+    // Emotka do wyświetlenia
+    private func emojiForIndex(_ indexName: String?) -> String {
+        guard let idx = indexName?.lowercased() else {
+            return "face.smiling"
+        }
+        switch idx {
+        case "bardzo dobry": return "face.smiling"
+        case "dobry":        return "face.smiling"
+        case "umiarkowany":  return "face.neutral"
+        case "dostateczny":  return "face.frown"
+        case "zły":          return "face.frown.fill"
+        case "bardzo zły":   return "face.dashed.fill"
+        default:             return "face.smiling"
+        }
+    }
+    
+    private func colorForIndex(_ indexName: String?) -> Color {
+        guard let idx = indexName?.lowercased() else {
+            return .green
+        }
+        switch idx {
+        case "bardzo dobry", "dobry": return .green
+        case "umiarkowany":          return .yellow
+        case "dostateczny":          return .orange
+        case "zły":                  return .red
+        case "bardzo zły":           return .purple
+        default:                     return .green
+        }
     }
     
     private var combinedAnnotations: [CustomAnnotation] {
@@ -290,15 +343,7 @@ extension LocationDataView {
     }
 }
 
-struct LocationDataView_Previews: PreviewProvider {
-    static var previews: some View {
-        LocationDataView()
-            .environmentObject(LocationManager())
-            .environmentObject(AirQualityService())
-    }
-}
-
-/// Prosty popup
+// MARK: - InfoPopupView (przywrócony)
 struct InfoPopupView: View {
     let title: String
     let description: String
@@ -308,13 +353,20 @@ struct InfoPopupView: View {
         ZStack {
             Color.black.opacity(0.4)
                 .edgesIgnoringSafeArea(.all)
-                .onTapGesture { onClose() }
+                .onTapGesture {
+                    onClose()
+                }
+            
             VStack(spacing: 16) {
                 Text(title)
                     .font(.title2)
                     .fontWeight(.semibold)
+                
                 Text(description)
+                    .font(.body)
                     .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
                 Button("OK") {
                     onClose()
                 }
