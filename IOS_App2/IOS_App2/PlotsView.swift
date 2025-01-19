@@ -28,7 +28,6 @@ struct PlotsView: View {
                                 .font(.headline)
                             
                             Chart(pm10Data) { item in
-                                // item jest Identifiable, więc mamy .id = date
                                 LineMark(
                                     x: .value("Date", item.dateAsDate),
                                     y: .value("PM10", item.value ?? 0)
@@ -37,7 +36,6 @@ struct PlotsView: View {
                             .frame(height: 200)
                             
                             Divider()
-                                .padding(.vertical, 10)
                             
                             Text("PM2.5 measurements")
                                 .font(.headline)
@@ -66,15 +64,14 @@ struct PlotsView: View {
             errorMessage = "No station found."
             return
         }
-        
-        // Pobieramy listę sensorów, by znaleźć sensorId dla PM10 i PM2.5
+        // Pobieramy listę sensorów, by odnaleźć PM10/PM2.5
         airQualityService.fetchSensors(for: stationId) { sensors in
             guard let sensors = sensors else {
                 errorMessage = "No sensors found."
                 return
             }
             
-            // PM10 sensor
+            // Sensor PM10
             if let pm10Sensor = sensors.first(where: { $0.param.paramFormula == "PM10" }) {
                 airQualityService.fetchSensorDataHistory(sensorId: pm10Sensor.id) { items in
                     DispatchQueue.main.async {
@@ -84,7 +81,7 @@ struct PlotsView: View {
                     }
                 }
             }
-            // PM2.5 sensor
+            // Sensor PM2.5
             if let pm25Sensor = sensors.first(where: { $0.param.paramFormula == "PM2.5" }) {
                 airQualityService.fetchSensorDataHistory(sensorId: pm25Sensor.id) { items in
                     DispatchQueue.main.async {
@@ -98,18 +95,18 @@ struct PlotsView: View {
     }
 }
 
-// MARK: - Dodajemy rozszerzenie "ValueItem: Identifiable"
+// MARK: - ValueItem + Identifiable
 extension ValueItem: Identifiable {
-    // Jako "id" używamy daty (string) – musi być unikalny w danej tablicy
     public var id: String {
+        // Możesz użyć date + (value?.description ?? "")
+        // lub samo date, zakładając że w tablicy daty nie powtarzają się
         date
     }
 }
 
-// MARK: - Pomocnicze do konwersji daty
+// MARK: - dataAsDate
 extension ValueItem {
     var dateAsDate: Date {
-        // format "2017-03-28 12:00:00"
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter.date(from: date) ?? Date()

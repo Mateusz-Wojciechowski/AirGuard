@@ -34,7 +34,7 @@ struct LocationDataView: View {
                         .fontWeight(.bold)
                         .padding(.top, 16)
                     
-                    // Kafelek z AQI
+                    // Kafelek z AQI + emotka
                     VStack(spacing: 8) {
                         let indexName = nearestStationIndex()
                         Image(systemName: emojiForIndex(indexName))
@@ -43,6 +43,7 @@ struct LocationDataView: View {
                             .frame(width: 40, height: 40)
                             .foregroundColor(colorForIndex(indexName))
                         
+                        // Wypisanie koordów, AQI...
                         if let userLocation = locationManager.userLocation {
                             Text("\(userLocation.coordinate.latitude), \(userLocation.coordinate.longitude)")
                                 .font(.subheadline)
@@ -75,8 +76,10 @@ struct LocationDataView: View {
                         
                         // Przycisk do wykresów
                         Button(action: {
-                            if let st = nearestStation() {
-                                plotsStationId = st.id
+                            guard let nb = nearestStation() else { return }
+                            // Najpierw pobieramy details stacji (w razie gdyby jeszcze nie były pobrane)
+                            airQualityService.fetchDetails(for: nb.id) {
+                                plotsStationId = nb.id
                                 showPlots = true
                             }
                         }) {
@@ -284,22 +287,25 @@ extension LocationDataView {
         return String(format: "%.1f", v)
     }
     
-    // Emotka do wyświetlenia
+    // Emotka do wyświetlenia (rezygnujemy z "face.*", bo niektóre są niedostępne)
+    // Zastosujemy proste ikony "sun.max", "cloud", "cloud.rain", ...
     private func emojiForIndex(_ indexName: String?) -> String {
         guard let idx = indexName?.lowercased() else {
-            return "face.smiling"
+            // "domyślna" ikonka – np. słońce
+            return "sun.max"
         }
         switch idx {
-        case "bardzo dobry": return "face.smiling"
-        case "dobry":        return "face.smiling"
-        case "umiarkowany":  return "face.neutral"
-        case "dostateczny":  return "face.frown"
-        case "zły":          return "face.frown.fill"
-        case "bardzo zły":   return "face.dashed.fill"
-        default:             return "face.smiling"
+        case "bardzo dobry": return "sun.max.fill"  // intensywnie słoneczny
+        case "dobry":        return "sun.max"       // słońce
+        case "umiarkowany":  return "cloud.sun"     // pół na pół
+        case "dostateczny":  return "cloud"         // chmura
+        case "zły":          return "cloud.rain"    // deszcz
+        case "bardzo zły":   return "cloud.bolt.rain" // burza
+        default:             return "sun.max"       // fallback
         }
     }
     
+    // Kolor do emotki
     private func colorForIndex(_ indexName: String?) -> Color {
         guard let idx = indexName?.lowercased() else {
             return .green
@@ -343,7 +349,7 @@ extension LocationDataView {
     }
 }
 
-// MARK: - InfoPopupView (przywrócony)
+// MARK: - InfoPopupView
 struct InfoPopupView: View {
     let title: String
     let description: String
