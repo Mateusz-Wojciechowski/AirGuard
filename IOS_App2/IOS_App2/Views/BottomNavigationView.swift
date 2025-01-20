@@ -11,8 +11,7 @@ struct BottomNavigationView: View {
             Spacer()
 
             Button(action: {
-                // Akcja dla ikony Home
-                // Możesz zaimplementować nawigację do ekranu głównego, jeśli istnieje
+                
             }) {
                 Image(systemName: "house.fill")
                     .resizable()
@@ -40,8 +39,7 @@ struct BottomNavigationView: View {
             Spacer()
 
             Button(action: {
-                // Akcja dla ikony Menu
-                // Możesz zaimplementować menu, jeśli jest potrzebne
+                
             }) {
                 Image(systemName: "ellipsis")
                     .resizable()

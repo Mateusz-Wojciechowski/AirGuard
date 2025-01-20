@@ -45,7 +45,6 @@ struct StationCircleView: View {
                         
                         Divider().padding(.vertical, 8)
                         
-                        // Przycisk "Details"
                         Button("Details") {
                             showInfo = false
                             onDetails?(stationId)

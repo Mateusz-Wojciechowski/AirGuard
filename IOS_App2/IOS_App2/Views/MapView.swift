@@ -53,8 +53,6 @@ struct MapView: View {
                 EmptyView()
             }
         }
-        // Brak drugiej nawigacji => będzie tylko 1 strzałka w stacku,
-        // zarządzanym np. przez ContentView lub inny rodzic.
     }
     
     private var combinedAnnotations: [CustomAnnotation] {

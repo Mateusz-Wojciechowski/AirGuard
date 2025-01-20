@@ -98,8 +98,6 @@ struct PlotsView: View {
 // MARK: - ValueItem + Identifiable
 extension ValueItem: Identifiable {
     public var id: String {
-        // Możesz użyć date + (value?.description ?? "")
-        // lub samo date, zakładając że w tablicy daty nie powtarzają się
         date
     }
 }
